@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useState } from "react";
+import * as Notifications from "expo-notifications";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -8,12 +9,25 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Toast from "react-native-toast-message";
 
 import { updateOrder } from "@/api/updateOrder";
 import { FilterModal } from "@/components/FilterModal";
 import { OrderCard } from "@/components/OrderCard";
 import { useOrders } from "@/hooks/useOrders";
-import { Filters } from "@/types/order";
+import { sanityClient } from "@/scripts/sanityClient";
+import { Filters, Order } from "@/types/order";
+
+const PRIMARY = "#bd6281";
+const SECONDARY = "#df9e98";
+
+// 🧠 Define the shape of a Sanity mutation event
+interface SanityMutationEvent<T> {
+  transition?: "update" | "appear" | "disappear";
+  result?: T;
+  documentId?: string;
+  mutations?: any[];
+}
 
 export default function HomeScreen() {
   const [filters, setFilters] = useState<Filters>({
@@ -26,6 +40,52 @@ export default function HomeScreen() {
   const [statusDropdown, setStatusDropdown] = useState<string | null>(null);
 
   const { orders, loading, refetch } = useOrders(filters);
+  const previousOrderCount = useRef<number>(0);
+
+  // 🔔 Listen for new orders in real-time
+  useEffect(() => {
+    const subscription = sanityClient
+      .listen<Order>(
+        `*[_type == "order"] | order(orderDate desc)[0...20]`,
+        {},
+        { includeResult: true }
+      )
+      .subscribe((update) => {
+        if (
+          update.type === "mutation" &&
+          update.transition === "appear" &&
+          update.result
+        ) {
+          const newOrder = update.result;
+          console.log("🆕 New Order:", newOrder);
+
+          // ✅ Send native Android notification
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "🛍️ New Order Found!",
+              body: `Order from ${newOrder.customerName} just arrived.`,
+              sound: "default",
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+            },
+            trigger: null,
+          });
+
+          // ✅ Show toast inside the app
+          Toast.show({
+            type: "success",
+            text1: "🛍️ New Order Found!",
+            text2: `Order from ${newOrder.customerName}`,
+            visibilityTime: 3000,
+            position: "top",
+          });
+
+          // ✅ Refetch list to refresh orders
+          refetch();
+        }
+      });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleStatusUpdate = async (
     id: string,
@@ -50,17 +110,22 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F9FAFB" }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+      <StatusBar barStyle="dark-content" backgroundColor={SECONDARY} />
 
       {/* Header */}
       <View
         style={{
-          backgroundColor: "white",
+          backgroundColor: SECONDARY,
           paddingTop: 50,
           paddingBottom: 16,
           paddingHorizontal: 16,
           borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
+          borderBottomColor: SECONDARY,
+          shadowColor: "#000",
+          shadowOpacity: 0.15,
+          shadowOffset: { width: 0, height: 2 },
+          shadowRadius: 4,
+          elevation: 5,
         }}
       >
         <View
@@ -79,7 +144,7 @@ export default function HomeScreen() {
               flexDirection: "row",
               alignItems: "center",
               gap: 6,
-              backgroundColor: "#3B82F6",
+              backgroundColor: PRIMARY,
               paddingVertical: 8,
               paddingHorizontal: 14,
               borderRadius: 10,
@@ -98,7 +163,7 @@ export default function HomeScreen() {
         <View
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color={PRIMARY} />
           <Text style={{ marginTop: 12, color: "#6B7280", fontSize: 14 }}>
             Loading orders...
           </Text>
