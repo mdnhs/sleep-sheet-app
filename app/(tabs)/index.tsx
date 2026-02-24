@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import * as Notifications from "expo-notifications";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +16,7 @@ import { OrderCard } from "@/components/OrderCard";
 import { useOrders } from "@/hooks/useOrders";
 import { sanityClient } from "@/scripts/sanityClient";
 import { Filters, Order } from "@/types/order";
+import { scheduleOrderNotification } from "@/utils/notificationSetup";
 
 const PRIMARY = "#bd6281";
 const SECONDARY = "#df9e98";
@@ -59,16 +59,7 @@ export default function HomeScreen() {
           const newOrder = update.result;
           console.log("🆕 New Order:", newOrder);
 
-          // ✅ Send native Android notification
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "🛍️ New Order Found!",
-              body: `Order from ${newOrder.customerName} just arrived.`,
-              sound: "default",
-              priority: Notifications.AndroidNotificationPriority.HIGH,
-            },
-            trigger: null,
-          });
+          void scheduleOrderNotification(newOrder.customerName);
 
           // ✅ Show toast inside the app
           Toast.show({

@@ -3,53 +3,54 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native";
-import * as Notifications from "expo-notifications";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import "react-native-reanimated";
 import Toast from "react-native-toast-message";
 
-import { useColorScheme } from "@/hooks/use-color-scheme";
-import { registerForPushNotificationsAsync } from "@/utils/notificationSetup"; // your setup file
+import { ThemePreferenceProvider, useThemePreference } from "@/context/theme-preference";
+import {
+  registerForPushNotificationsAsync,
+  setupNotificationHandler,
+  subscribeToNotificationEvents,
+} from "@/utils/notificationSetup";
 
-export const unstable_settings = {
-  anchor: "(tabs)",
-};
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+function RootLayoutInner() {
+  const { resolvedScheme } = useThemePreference();
 
   useEffect(() => {
-    // 🔔 Register for notifications when app loads
-    registerForPushNotificationsAsync();
+    let cleanup = () => {};
+    let isMounted = true;
 
-    // ✅ Foreground listener
-    const foregroundSub = Notifications.addNotificationReceivedListener(
-      (notification) => {
-        console.log("📩 Notification received:", notification);
-      }
-    );
+    (async () => {
+      await setupNotificationHandler();
+      await registerForPushNotificationsAsync();
+      const unsubscribe = await subscribeToNotificationEvents({
+        onReceive: (notification) => {
+          console.log("📩 Notification received:", notification);
+        },
+        onResponse: (response) => {
+          console.log("👉 Notification clicked:", response);
+        },
+      });
 
-    // ✅ Background/Interaction listener (when user taps)
-    const responseSub = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        console.log("👉 Notification clicked:", response);
-        // You can navigate here if needed later
-        // e.g., router.push("/orders");
+      if (isMounted) {
+        cleanup = unsubscribe;
+      } else {
+        unsubscribe();
       }
-    );
+    })();
 
     return () => {
-      foregroundSub.remove();
-      responseSub.remove();
+      isMounted = false;
+      cleanup();
     };
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <ThemeProvider value={resolvedScheme === "dark" ? DarkTheme : DefaultTheme}>
+      <Stack initialRouteName="dashboard" screenOptions={{ headerShown: false }}>
         <Stack.Screen
           name="modal"
           options={{ presentation: "modal", title: "Modal" }}
@@ -58,12 +59,20 @@ export default function RootLayout() {
 
       {/* ✅ Status bar setup */}
       <StatusBar
-        style={colorScheme === "dark" ? "light" : "dark"}
-        backgroundColor={colorScheme === "dark" ? "#111827" : "#ffffff"}
+        style={resolvedScheme === "dark" ? "light" : "dark"}
+        backgroundColor={resolvedScheme === "dark" ? "#0b0b0c" : "#f4f4f5"}
       />
 
       {/* ✅ Toast setup */}
       <Toast />
     </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemePreferenceProvider>
+      <RootLayoutInner />
+    </ThemePreferenceProvider>
   );
 }
