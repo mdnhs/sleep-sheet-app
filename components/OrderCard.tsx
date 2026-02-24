@@ -20,6 +20,8 @@ import * as Linking from "expo-linking";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
+import * as IntentLauncher from "expo-intent-launcher";
 import { StatusBadge } from "./StatusBadge";
 import { StatusDropdown } from "./StatusDropdown";
 import { useThemePreference } from "@/context/theme-preference";
@@ -325,9 +327,18 @@ export const OrderCard: React.FC<OrderCardProps> = ({
 
         if (canShare) {
           await Sharing.shareAsync(printed.uri, {
-            UTI: ".pdf",
             mimeType: "application/pdf",
           });
+        } else if (Platform.OS === "android") {
+          const contentUri = await FileSystem.getContentUriAsync(printed.uri);
+          await IntentLauncher.startActivityAsync(
+            IntentLauncher.ActivityAction.VIEW,
+            {
+              data: contentUri,
+              flags: 1,
+              type: "application/pdf",
+            }
+          );
         } else {
           await Linking.openURL(printed.uri);
         }

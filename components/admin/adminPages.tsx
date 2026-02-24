@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import * as Linking from "expo-linking";
 import Toast from "react-native-toast-message";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { createAdminOrder } from "@/api/adminOrders";
 import {
@@ -49,17 +50,27 @@ type Order = {
   products?: { quantity?: number; product?: { name?: string } }[];
 };
 
-function OrderRow({ order }: { order: Order }) {
+function OrderRow({
+  order,
+  onPress,
+}: {
+  order: Order;
+  onPress?: () => void;
+}) {
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        borderTopWidth: 1,
-        borderTopColor: COLORS.line,
-        paddingVertical: 10,
-      }}
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderTopWidth: 1,
+          borderTopColor: COLORS.line,
+          paddingVertical: 10,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
     >
       <View style={{ flex: 1, paddingRight: 10 }}>
         <Text style={{ color: COLORS.text, fontWeight: "600", fontSize: 14 }}>
@@ -72,7 +83,7 @@ function OrderRow({ order }: { order: Order }) {
       <Text style={{ color: COLORS.text, fontWeight: "700", fontSize: 13 }}>
         {formatCurrency(order.totalPrice ?? 0)}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -163,6 +174,7 @@ function buildCategoryPathMap(categories: CatalogCategory[]) {
 }
 
 export function DashboardPage() {
+  const router = useRouter();
   const { orders, loading } = useOrders({
     status: "all",
     deliveryStatus: "all",
@@ -196,7 +208,16 @@ export function DashboardPage() {
             <View style={{ flexGrow: 2, minWidth: 320 }}>
               <AdminCard title="Recent Activity">
                 {typedOrders.slice(0, 8).map((order) => (
-                  <OrderRow key={order._id} order={order} />
+                  <OrderRow
+                    key={order._id}
+                    order={order}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/orders",
+                        params: { orderId: order._id },
+                      } as never)
+                    }
+                  />
                 ))}
               </AdminCard>
             </View>
@@ -226,6 +247,7 @@ export function OrdersPage({
   route: string;
   status: string;
 }) {
+  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
   const [filters, setFilters] = useState<Filters>({
     status,
     deliveryStatus: "all",
@@ -238,12 +260,17 @@ export function OrdersPage({
 
   const { orders, loading, refetch } = useOrders(filters);
   const typedOrders = orders as Order[];
-  const totalOrders = typedOrders.length;
-  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+  const selectedOrderId = typeof orderId === "string" ? orderId : undefined;
+  const visibleOrders = useMemo(() => {
+    if (!selectedOrderId) return typedOrders;
+    return typedOrders.filter((order) => order._id === selectedOrderId);
+  }, [typedOrders, selectedOrderId]);
+  const totalVisibleOrders = visibleOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalVisibleOrders / pageSize));
   const pagedOrders = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return typedOrders.slice(start, start + pageSize);
-  }, [typedOrders, currentPage]);
+    return visibleOrders.slice(start, start + pageSize);
+  }, [visibleOrders, currentPage]);
 
   const handleStatusUpdate = async (
     id: string,
@@ -271,6 +298,12 @@ export function OrdersPage({
   }, [filters.status, filters.deliveryStatus, filters.paymentStatus]);
 
   React.useEffect(() => {
+    if (selectedOrderId) {
+      setCurrentPage(1);
+    }
+  }, [selectedOrderId]);
+
+  React.useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
@@ -287,7 +320,7 @@ export function OrdersPage({
         }}
       >
         <Text style={{ color: COLORS.muted, fontSize: 13 }}>
-          {totalOrders} orders · Page {currentPage} of {totalPages}
+          {totalVisibleOrders} orders · Page {currentPage} of {totalPages}
         </Text>
         <Pressable
           onPress={() => setFilterModalVisible(true)}
@@ -309,6 +342,22 @@ export function OrdersPage({
       </View>
 
       <AdminCard title={title}>
+        {selectedOrderId ? (
+          <View
+            style={{
+              backgroundColor: COLORS.soft,
+              borderWidth: 1,
+              borderColor: COLORS.line,
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ color: COLORS.text, fontSize: 12, fontWeight: "600" }}>
+              Showing selected order: #{selectedOrderId.slice(0, 8)}
+            </Text>
+          </View>
+        ) : null}
         {loading ? (
           <LoadingState />
         ) : pagedOrders.length > 0 ? (
@@ -327,7 +376,7 @@ export function OrdersPage({
         )}
       </AdminCard>
 
-      {totalOrders > pageSize ? (
+      {totalVisibleOrders > pageSize ? (
         <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
           <Pressable
             onPress={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
@@ -1358,6 +1407,7 @@ export function ShopPage() {
         onChangeText={(value) =>
           setDraftFilters((prev) => ({ ...prev, search: value }))
         }
+        placeholderTextColor={COLORS.muted}
         style={{
           borderWidth: 1,
           borderColor: COLORS.line,
@@ -1376,6 +1426,7 @@ export function ShopPage() {
             setDraftFilters((prev) => ({ ...prev, minPrice: value }))
           }
           keyboardType="numeric"
+          placeholderTextColor={COLORS.muted}
           style={shopInputStyle}
         />
         <TextInput
@@ -1385,6 +1436,7 @@ export function ShopPage() {
             setDraftFilters((prev) => ({ ...prev, maxPrice: value }))
           }
           keyboardType="numeric"
+          placeholderTextColor={COLORS.muted}
           style={shopInputStyle}
         />
       </View>
@@ -1441,7 +1493,7 @@ export function ShopPage() {
             paddingHorizontal: 8,
             borderRadius: 8,
             backgroundColor:
-              draftFilters.categoryId === "all" ? "#FDF2F8" : "transparent",
+              draftFilters.categoryId === "all" ? colors.soft : "transparent",
             borderWidth: draftFilters.categoryId === "all" ? 1 : 0,
             borderColor:
               draftFilters.categoryId === "all" ? COLORS.rose : "transparent",
